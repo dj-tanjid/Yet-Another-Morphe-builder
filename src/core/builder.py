@@ -7,7 +7,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from src.core.config import BUILD_DIR, TEMP_DIR, AppEntry, Config
-from src.core.logger import epr, pr, wpr
+from src.core.logger import IS_GITHUB, epr, pr, wpr
 from src.core.network import NetworkError, NetworkManager
 from src.core.patcher import PatcherCLI, PatcherError, SignatureError
 from src.core.prebuilts import APKSIGNER, Prebuilts, fetch_prebuilts, get_highest_ver
@@ -33,47 +33,51 @@ def _make_scraper(source: str, net: NetworkManager) -> BaseScraper:
         case _:
             raise ValueError(f"Unknown APK source: {source!r}")
 
-def _find_pkg_name(entry: AppEntry, scrapers: dict[str, BaseScraper]) -> tuple[str, str]:
+def _find_pkg_name(entry: AppEntry, scrapers: dict[str, BaseScraper]) -> tuple[str, str, set[str]]:
+    failed: set[str] = set()
     for src, url in entry.dl_urls.items():
         try:
             metadata = scrapers[src].cached_metadata(url)
             pr(f"Package name of '{entry.table}' is '{metadata.pkg_name}'")
-            return metadata.pkg_name, src
+            return metadata.pkg_name, src, failed
         except (NetworkError, ScraperError) as exc:
             epr(f"Could not find '{entry.table}' in '{src}': {exc}")
+            failed.add(src)
 
     raise BuilderError("Package name not found")
 
 def _resolve_version(entry: AppEntry, patcher: PatcherCLI, list_patches: str, pkg_name: str, dl_from: str, scrapers: dict[str, BaseScraper]) -> tuple[str, bool]:
     if entry.version not in ("auto", "latest"):
-        pr(f"Choosing version '{entry.version}' for '{entry.table}'")
-        return entry.version, True
-
-    if entry.version == "auto" and (v := patcher.get_last_supported_version(list_patches, pkg_name, entry.included_patches)):
-        pr(f"Choosing version '{v}' for '{entry.table}'")
-        return v, False
-
-    versions = scrapers[dl_from].cached_metadata(entry.dl_urls[dl_from]).versions
-    version = get_highest_ver(versions) if versions else ""
-    if not version:
-        raise BuilderError("Could not determine version")
+        version, is_custom = entry.version, True
+    elif entry.version == "auto" and (v := patcher.get_last_supported_version(list_patches, pkg_name, entry.included_patches)):
+        version, is_custom = v, False
+    else:
+        versions = scrapers[dl_from].cached_metadata(entry.dl_urls[dl_from]).versions
+        version = get_highest_ver(versions) if versions else ""
+        if not version:
+            raise BuilderError("Could not determine version")
+        is_custom = entry.version != "auto"
 
     pr(f"Choosing version '{version}' for '{entry.table}'")
-    return version, entry.version != "auto"
+    return version, is_custom
 
-def _download_apk(entry: AppEntry, version: str, arch: str, pkg_name: str, scrapers: dict[str, BaseScraper]) -> DownloadResult:
+def _download_apk(entry: AppEntry, version: str, arch: str, pkg_name: str, scrapers: dict[str, BaseScraper], dl_from: str, failed_sources: set[str]) -> DownloadResult:
     arch_f = arch.replace(" ", "")
     version_f = version.replace(" ", "").lstrip("v")
-    base_name = f"{pkg_name}-{version_f}-{arch_f}.apk"
+    base_name = f"{pkg_name}-v{version_f}-{arch_f}.apk"
     stock_apk = TEMP_DIR / base_name
     if stock_apk.exists():
         return DownloadResult(path=stock_apk, is_bundle=False)
 
-    stock_apkm = TEMP_DIR / f"{base_name}.apkm"
+    stock_apkm = stock_apk.with_suffix(".apkm")
     if stock_apkm.exists():
         return DownloadResult(path=stock_apkm, is_bundle=True)
 
-    for src, url in entry.dl_urls.items():
+    ordered_sources = [dl_from] + [src for src in entry.dl_urls if src != dl_from]
+    for src in ordered_sources:
+        if src in failed_sources:
+            continue
+        url = entry.dl_urls[src]
         pr(f"Downloading '{entry.table}' from '{src}'")
         try:
             return scrapers[src].download(url, version, stock_apk, arch, entry.dpi)
@@ -119,11 +123,12 @@ def _apply_patch(entry: AppEntry, arch: str, version: str, force: bool, patcher:
     auto_patches = patcher.resolve_auto_patches(list_patches)
     final_args = patcher.build_patch_args(included_patches=entry.included_patches, excluded_patches=entry.excluded_patches, exclusive=entry.exclusive_patches, extra_args=entry.patcher_args, arch=arch, auto_patches=auto_patches, force=force)
     base_name = f"{entry.app_name.lower().replace(" ", "-")}-{entry.brand.lower().replace(" ", "-")}"
-    patched_apk = TEMP_DIR / f"{base_name}-{version_f}-{arch_f}.apk"
+    apk_name = f"{base_name}-v{version_f}-{arch_f}.apk"
+    patched_apk = TEMP_DIR / apk_name
 
     pr(f"Building '{entry.table}'")
     patcher.patch(dl_result.path, patched_apk, final_args)
-    apk_output = BUILD_DIR / f"{base_name}-v{version_f}-{arch_f}.apk"
+    apk_output = BUILD_DIR / apk_name
     shutil.move(patched_apk, apk_output)
     return apk_output
 
@@ -134,16 +139,15 @@ def _build_single(entry: AppEntry, arch: str, label: str, net: NetworkManager, p
 
     try:
         scrapers = {src: _make_scraper(src, net) for src in entry.dl_urls}
-        pkg_name, dl_from = _find_pkg_name(entry, scrapers)
+        pkg_name, dl_from, failed_sources = _find_pkg_name(entry, scrapers)
         list_patches = patcher.list_patches(pkg_name)
         version, force = _resolve_version(entry, patcher, list_patches, pkg_name, dl_from, scrapers)
-        dl_result = _download_apk(entry, version, arch, pkg_name, scrapers)
+        dl_result = _download_apk(entry, version, arch, pkg_name, scrapers, dl_from, failed_sources)
         _verify_sig(dl_result, pkg_name, patcher, label, entry.skip_sigcheck, strict_sigcheck)
         apk_output = _apply_patch(entry, arch, version, force, patcher, list_patches, dl_result)
         pr(f"Built {label}: '{apk_output}'")
-        if os.getenv("GITHUB_ACTIONS") == "true":
-            return f"- 🟢 » {label}: [`{version}`](../../releases/download/{{TAG}}/{apk_output.name})"
-        return f"- 🟢 » {label}: `{version}`"
+        ver_str = f"[`{version}`](../../releases/download/{{TAG}}/{apk_output.name})" if IS_GITHUB else f"`{version}`"
+        return f"- 🟢 » {label}: {ver_str}"
     except (BuilderError, PatcherError, ScraperError, NetworkError, SignatureError) as exc:
         if isinstance(exc, SignatureError):
             _failed_signatures.add(entry.table)
@@ -154,7 +158,7 @@ def _build_single(entry: AppEntry, arch: str, label: str, net: NetworkManager, p
 def _submit_entries(entries: list[AppEntry], pool: ThreadPoolExecutor, net: NetworkManager, ks_path: Path | None, strict_sigcheck: bool) -> list[Future[str | None]]:
     futures: list[Future[str | None]] = []
     build_cache: dict[tuple[str, str, str, str], tuple[Prebuilts, PatcherCLI]] = {}
-    unique_reqs = {(e.cli_source, e.cli_version, e.patches_source, e.patches_version) for e in entries if e.dl_from}
+    unique_reqs = {(e.cli_source, e.cli_version, e.patches_source, e.patches_version) for e in entries if e.dl_urls}
     for req in unique_reqs:
         cli_src, cli_ver, patches_src, patches_ver = req
         try:
@@ -164,7 +168,7 @@ def _submit_entries(entries: list[AppEntry], pool: ThreadPoolExecutor, net: Netw
             epr(f"Could not get prebuilts for '{patches_src}': {exc}")
 
     for entry in entries:
-        if not entry.dl_from:
+        if not entry.dl_urls:
             epr(f"No 'dlurl' option was set for '{entry.table}'")
             continue
 
@@ -186,7 +190,7 @@ def run_build(entries: list[AppEntry], config: Config, net: NetworkManager) -> b
         return False
 
     ks_path: Path | None = None
-    if ks_b64 := os.getenv("KEYSTORE_BASE64", ""):
+    if ks_b64 := os.getenv("KEYSTORE_BASE64"):
         with tempfile.NamedTemporaryFile(dir=TEMP_DIR, suffix=".keystore", delete=False) as tf:
             tf.write(base64.b64decode(ks_b64))
             ks_path = Path(tf.name)

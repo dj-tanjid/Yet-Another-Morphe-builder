@@ -27,7 +27,7 @@ def get_matrix(source: str) -> None:
     print(json.dumps({"include": include}, ensure_ascii=False))
 
 def check_builds_needed() -> None:
-    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    repo = os.getenv("GITHUB_REPOSITORY")
     if not repo:
         abort("GITHUB_REPOSITORY environment variable is not set")
 
@@ -48,7 +48,7 @@ def check_builds_needed() -> None:
     with NetworkManager() as net:
         our_releases_by_brand: dict[str, str] = {}
         try:
-            our_releases_raw = net.gh_get(f"https://api.github.com/repos/{repo}/releases?per_page=100")
+            our_releases_raw = net.get(f"https://api.github.com/repos/{repo}/releases?per_page=100", headers=net._gh_headers)
             for rel in json.loads(our_releases_raw):
                 tag = rel.get("tag_name", "")
                 brand = tag.split("-", 1)[1] if "-" in tag else ""
@@ -63,7 +63,7 @@ def check_builds_needed() -> None:
             our_date = our_releases_by_brand.get(brand, "")
             upstream_date = ""
             try:
-                upstream_rel = json.loads(net.gh_get(f"https://api.github.com/repos/{patches_source}/releases/latest"))
+                upstream_rel = json.loads(net.get(f"https://api.github.com/repos/{patches_source}/releases/latest", headers=net._gh_headers))
                 upstream_date = upstream_rel.get("published_at", "") or ""
             except ResourceNotFoundError:
                 epr(f"No upstream release found for '{patches_source}', skipping brand '{brand}'")
@@ -116,7 +116,6 @@ def combine_logs(logs_dir: Path | str) -> None:
     green_lines: list[str] = []
     collected: list[str] = []
     microg_line = ""
-
     for log in logs:
         m_line = _parse_log_file(log, green_lines, collected)
         if not microg_line:

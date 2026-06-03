@@ -27,7 +27,7 @@ class GitHubScraper(BaseScraper):
         self._tag = tag
         api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}"
         try:
-            release = json.loads(self.net.gh_get(api_url))
+            release = json.loads(self.net.get(api_url, headers=self.net._gh_headers))
         except ResourceNotFoundError:
             raise GitHubReleasesError(f"Release tag '{tag}' not found in '{owner}/{repo}'") from None
 
@@ -75,6 +75,6 @@ class GitHubScraper(BaseScraper):
             raise GitHubReleasesError(f"No matching variant found for arch '{arch}'")
 
         is_bundle = asset["name"].endswith(".apkm")
-        out_path = dest.with_name(f"{dest.name}{'.apkm' if is_bundle else ''}")
-        self.net.gh_download(asset["browser_download_url"], out_path)
+        out_path = dest.with_suffix(".apkm") if is_bundle else dest
+        self.net.download(asset["browser_download_url"], out_path, headers=self.net._gh_headers | {"Accept": "application/octet-stream"})
         return DownloadResult(path=out_path, is_bundle=is_bundle)
