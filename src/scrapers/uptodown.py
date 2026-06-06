@@ -32,8 +32,7 @@ class UptodownScraper(BaseScraper):
         versions: list[str] = []
         for el in soup_ver.select(".version"):
             if text := el.get_text(strip=True):
-                if "." in text:
-                    versions.append(text)
+                versions.append(text)
 
         return AppMetadata(pkg_name=pkg_name, versions=versions)
 

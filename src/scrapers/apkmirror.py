@@ -39,7 +39,7 @@ class APKMirrorScraper(BaseScraper):
                     if v:
                         versions.append(v)
 
-        versions = [v for v in versions if "." in v and not re.search(r"beta|alpha", v, re.I)]
+        versions = [v for v in versions if not re.search(r"beta|alpha", v, re.I)]
         return AppMetadata(pkg_name=m.group(1), versions=versions)
 
     def download(self, url: str, version: str, dest: Path, arch: str, dpi: str) -> DownloadResult:
