@@ -169,18 +169,16 @@ For those of you who would like to be 100% sure that the APK files you download 
 98d443d7bf2495e4faa56ed0190ad84619702d2322c0ac91c7d52ba6d676969c
 ```
 
-### 🙏 Credits
+### 🤝 Acknowledgments
 
 This repository is based on the [krvstek/uni-apks](https://github.com/krvstek/uni-apks) template (GPL-3.0), with the following transparent changes (see [changes](https://github.com/ngbangg/builder-for-morphe/commits/main/?author=nvbangg)):
 
 - Support for more apps
 - Support for automatically building only changed apps
-- Support for manually building all apps
-- UI and configuration improvements to easily build and customize your own apps
 - No manual configuration required for each `brand` in `ci.yml`
 - Automatic upstream sync support
 - GitHub Pages deployment support
-- Other changes contributed upstream: [PRs](https://github.com/krvstek/uni-apks/commits/main/?author=nvbangg), [co-authored commits](https://github.com/search?q=repo%3Akrvstek%2Funi-apks+Co-authored-by%3A+nvbangg&type=commits)
+- Other changes contributed upstream: [Pull Requests](https://github.com/krvstek/uni-apks/commits/main/?author=nvbangg), [co-authored commits](https://github.com/search?q=repo%3Akrvstek%2Funi-apks+Co-authored-by%3A+nvbangg&type=commits)
 
 ## ⚠️ Disclaimer
 
