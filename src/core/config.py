@@ -54,7 +54,7 @@ def _parse_bool(d: dict[str, object], key: str, default: bool) -> bool:
 
 def parse_config(data: dict[str, object]) -> Config:
     return Config(
-        parallel_jobs=int(data.get("parallel-jobs", os.cpu_count() or 1)),
+        parallel_jobs=int(data.get("parallel-jobs", os.process_cpu_count() or 1)),
         brand=str(data.get("brand", "Morphe")),
         patches_version=str(data.get("patches-version", "latest")),
         cli_version=str(data.get("cli-version", "latest")),
@@ -85,12 +85,9 @@ def parse_app_entries(data: dict[str, object], main: Config) -> list[AppEntry]:
                 raise ValueError(f"Patch names inside {name} for '{table_name}' must be quoted")
 
         raw_keywords = t.get("changelog-keywords")
-        if isinstance(raw_keywords, list):
-            keywords = [str(k).strip().lower() for k in raw_keywords]
-        elif isinstance(raw_keywords, str):
-            keywords = [raw_keywords.strip().lower()]
-        else:
-            keywords = [table_name.lower().replace("-", " ")]
+        if raw_keywords is not None and not isinstance(raw_keywords, list):
+            raise ValueError(f"'changelog-keywords' must be a list for '{table_name}'")
+        keywords = [s.lower() for k in raw_keywords if (s := str(k)).strip()] if raw_keywords else []
 
         entries.append(AppEntry(
             table=table_name,

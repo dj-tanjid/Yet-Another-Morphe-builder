@@ -1,5 +1,4 @@
 strict-sigcheck = false
-build-changed-only = ["hoo-dles"]
 
 [Twitter-Piko]
 enabled = true
