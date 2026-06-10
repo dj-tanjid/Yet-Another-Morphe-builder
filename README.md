@@ -148,6 +148,13 @@ Here you can download and use applications selected for this repository, which a
 
 </details>
 
+## 🔐 Verifying Authenticity
+
+To ensure that the APK files you download are genuinely compiled by this project and haven't been tampered with, you can verify the APK's certificate fingerprint. All official releases share the following SHA-256 fingerprint:
+```text
+1894fee4df44d1823f3666db4743566d043dd72cbc13566433c1908270a4be10
+```
+
 ## 📚 Documentation & Contributing
 
 For full configuration reference, setup and contributing guide, see [CONTRIBUTING.md](CONTRIBUTING.md).
