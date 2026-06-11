@@ -12,6 +12,7 @@ version = "auto"
 patches-version = "dev" # Options 'latest', 'dev', or A specific version tag
 included-patches = """\
     'Bring back twitter' \
+    'Browse tweet object' \
     'Dynamic color' \
     """
 github-dlurl = "https://github.com/krvstek/uni-storage/releases/tag/x-twitter"
